@@ -76,12 +76,29 @@ each story numbered with a headline, date, and short summary - no links
 cluttering the story list (only the website name at the top of each card
 links out, if you want to read the full article).
 
+## No cap, no repeats
+- **`MAX_PER_SOURCE` is `None`** - every new, never-sent-before story from
+  every source is included, however many that is on a given day. A quiet
+  site (MIT News, DeepMind) might only have 1; a busy one (TechCrunch,
+  VentureBeat) might have 15+. Both are sent in full.
+- **`LOOKBACK_HOURS` is 48** - wide enough that a slow-posting site isn't
+  missed just because it didn't publish in the last day. This is safe
+  because of the next point:
+- **`seen_articles.json` is permanent memory** - once a story's unique ID
+  has been included in a digest, it is never included again, no matter how
+  long it stays in that site's RSS feed or how wide the lookback window is.
+  "Send it once, never again" is enforced per-story, forever - not by
+  narrowing the time window.
+
 ## Customizing your "employee"
 - **Frequency**: edit the `cron` line in `.github/workflows/monitor.yml`.
-  If you go more frequent than daily, also lower `LOOKBACK_HOURS` in the
-  script to match (roughly: lookback hours ≈ hours between runs + 2).
-- **Stories per source**: change `MAX_PER_SOURCE` in `ai_news_agent.py`
-  (currently 6 per site).
+  If you go more frequent than daily, you can also raise `LOOKBACK_HOURS`
+  further with no duplicate risk - see above.
+- **Story detail**: summaries are written to be detailed (5-7+ sentences,
+  covering what was released, who's behind it, technical specifics, and
+  why it matters) whenever `GEMINI_API_KEY` is set. Without a Gemini key,
+  you still get the source's own raw excerpt for each story (headline +
+  date + summary), just not AI-rewritten.
 - **Sources**: add/remove RSS feeds in the `FEEDS` dict (and add a matching
   entry in `SOURCE_HOMEPAGE`). If a feed silently returns 0 items, check the
   Actions log - it prints `[FEED OK]`, `[FEED EMPTY]`, or `[FEED FAIL]` for
