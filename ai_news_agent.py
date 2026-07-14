@@ -83,9 +83,15 @@ OPTIONAL_KEYWORD_FILTER_SOURCES = {
     ],
 }
 
-MAX_PER_SOURCE = 6            # latest unseen stories to include, per website
-LOOKBACK_HOURS = 30           # wider-than-24h window so borderline-recent stories aren't missed
-SEEN_FILE = "seen_articles.json"    # prevents the same story ever being sent twice, across days
+MAX_PER_SOURCE = None          # No cap - include every new, never-sent-before story per site.
+                                # Set to a number (e.g. 10) later if any single day gets too long.
+LOOKBACK_HOURS = 48            # Wide window so slow-posting sites (MIT News, DeepMind) aren't
+                                # missed just because they didn't publish in the last 24-30h.
+                                # This does NOT risk duplicates - seen_articles.json (below) is
+                                # what guarantees a story is never sent twice, not this window.
+SEEN_FILE = "seen_articles.json"    # Permanent memory: once a story's id has been sent, it is
+                                     # never sent again, no matter how many days it stays in a
+                                     # feed's RSS window. This is enforced per-story, not per-run.
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")       # optional - AI one-liners per story
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")   # THIS agent's OWN bot token
@@ -190,7 +196,7 @@ def fetch_recent_articles():
                 "source": source,
                 "title": title,
                 "link": entry.get("link"),
-                "summary": summary[:1500],
+                "summary": summary[:3000],
                 "published": pub_dt,
             })
 
@@ -202,7 +208,7 @@ def fetch_recent_articles():
                 continue
             seen_titles_norm.append(normalize_title(item["title"]))
             deduped.append(item)
-            if len(deduped) >= MAX_PER_SOURCE:
+            if MAX_PER_SOURCE is not None and len(deduped) >= MAX_PER_SOURCE:
                 break
 
         print(f"[FEED OK] {source}: {total_entries} entries fetched, {len(deduped)} new stories selected")
@@ -213,8 +219,7 @@ def fetch_recent_articles():
     total = sum(len(v) for v in grouped.values())
     print(f"\n[SUMMARY] {total} total new stories across {len(grouped)} sources with activity\n")
     for src, items in grouped.items():
-        capped_note = " (hit MAX_PER_SOURCE cap - more may exist)" if len(items) >= MAX_PER_SOURCE else ""
-        print(f"  {src}: {len(items)} stories{capped_note}")
+        print(f"  {src}: {len(items)} stories")
 
     return grouped, seen_ids
 
@@ -242,19 +247,31 @@ def summarize_source(source, items):
     )
 
     prompt = (
-        "You are summarizing AI/ML/GenAI news from a single source for a "
-        "quick daily briefing. Below are "
+        "You are writing a detailed daily AI/ML/GenAI news briefing from a "
+        "single source, for a reader who wants real substance, not a "
+        "one-line teaser. Below are "
         f"{len(items)} raw news items. For EACH one, write:\n\n"
         "N. [Headline in your own words, one line, no markdown]\n"
         "   Date: <copy the exact 'Published' value given below for this "
         "story - do not compute, guess, or reformat it, just copy it "
         "verbatim>\n"
-        "   Summary: <2-3 plain-language sentences covering what happened - "
-        "e.g. what model/tool/feature was released or what research was "
-        "announced, who/which company was involved, and why it matters>\n\n"
+        "   Summary: <a detailed, information-dense summary, 5-7 sentences "
+        "or more if the source material supports it. Cover: what exactly "
+        "was announced or released (model name/version, tool, feature, "
+        "paper, funding round, policy, etc.), which company/lab/person is "
+        "behind it, any concrete technical details given (benchmarks, "
+        "parameters, pricing, availability, architecture, capabilities), "
+        "how it compares to or affects existing products/competitors if "
+        "mentioned, and why it matters for the AI field or for users. Do "
+        "NOT pad with generic filler sentences - only include a sentence if "
+        "it adds a real fact from the source text below. If the source "
+        "material is thin, write fewer sentences rather than inventing "
+        "detail.>\n\n"
         "STRICT RULES:\n"
         "- Base every fact ONLY on the details given below for that story. "
-        "Never invent or guess facts not present in the source text.\n"
+        "Never invent, guess, or extrapolate facts not present in the "
+        "source text - thoroughness means using everything that IS there, "
+        "not adding things that aren't.\n"
         "- Do not include any URLs or links.\n"
         "- Plain text only, no markdown bold/asterisks/headers.\n"
         "- Number stories 1 through "
@@ -268,7 +285,7 @@ def summarize_source(source, items):
                 url,
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"maxOutputTokens": 2048},
+                    "generationConfig": {"maxOutputTokens": 4096},
                 },
                 timeout=45,
             )
@@ -287,11 +304,19 @@ def summarize_source(source, items):
 
 
 def format_raw_source(items):
-    """Fallback (no Gemini) - numbered headlines + dates for one source."""
+    """
+    Fallback (no Gemini configured) - numbered headline + date + the
+    source's own raw summary/excerpt for each story, so you still get
+    real detail even without AI summarization.
+    """
     lines = []
     for idx, item in enumerate(items, start=1):
         date_str = item["published"].strftime("%d %b %Y, %H:%M UTC")
-        lines.append(f"{idx}. [{date_str}] {item['title']}")
+        lines.append(f"{idx}. {item['title']}")
+        lines.append(f"   Date: {date_str}")
+        raw_summary = item["summary"].strip()
+        if raw_summary:
+            lines.append(f"   Summary: {raw_summary}")
     return "\n".join(lines)
 
 
