@@ -1,5 +1,6 @@
 # NK's AI / GenAI News Monitor
 
+
 Monitors global AI, machine learning, deep learning, GenAI, new AI tools,
 and new AI/LLM model news 24x7 and sends you ONE beautiful HTML digest page
 on Telegram, once a day. Runs entirely on free infrastructure.
