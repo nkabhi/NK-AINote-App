@@ -1,4 +1,4 @@
-# NK's AI / GenAI News Monitor 
+# NK's AI / GenAI News Monitor  
 
 
 Monitors global AI, machine learning, deep learning, GenAI, new AI tools,
